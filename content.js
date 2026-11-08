@@ -126,9 +126,11 @@
 
   // ── MutationObserver: мгновенная реакция при появлении рекламы ───────────
   function setupObserver() {
-    if (observer || !document.body) return;
+    if (observer) return;
+    const target = document.body || document.documentElement;
+    if (!target) return;
     observer = new MutationObserver(tick);
-    observer.observe(document.body, {
+    observer.observe(target, {
       childList: true,
       subtree: true,
       attributeFilter: ["class"]
@@ -149,7 +151,7 @@
   // ── Загрузить сохранённое состояние ──────────────────────────────────────
   chrome.storage.local.get("enabled", ({ enabled: stored }) => {
     enabled = stored !== false;
-    if (document.body) init();
+    init();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
