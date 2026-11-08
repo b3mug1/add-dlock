@@ -1,10 +1,9 @@
 "use strict";
 
 (() => {
-  // ─── Selectors ───────────────────────────────────────────────────────────────
+  const STYLE_ID = "yt-ad-blocker-style";
 
   const AD_SELECTORS = [
-    // In-feed / sidebar ads
     "ytd-ad-slot-renderer",
     "ytd-display-ad-renderer",
     "ytd-in-feed-ad-layout-renderer",
@@ -13,35 +12,36 @@
     "ytd-search-pyv-renderer",
     "ytd-banner-promo-renderer",
     "ytd-statement-banner-renderer",
-    "ytd-ad-slot-renderer",
-    // Player overlays
+    "ytd-rich-item-renderer[is-ad]",
     "#player-ads",
+    "#masthead-ad",
     ".ytp-ad-overlay-container",
-    ".ytp-ad-overlay-slot",
     ".ytp-ad-text-overlay",
     ".ytp-ad-image-overlay",
-    // Shopping / promo panels
+    ".ytp-ad-module",
+    ".ytp-ad-player-overlay",
+    ".ytp-ad-player-overlay-layout",
+    ".video-ads",
     "ytd-action-companion-ad-renderer",
-    "ytd-watch-next-secondary-results-renderer ytd-compact-promoted-video-renderer",
-    // Masthead
-    "#masthead-ad",
-    "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)"
+    "ytd-watch-next-secondary-results-renderer ytd-compact-promoted-video-renderer"
   ];
 
   const SKIP_SELECTORS = [
-    ".ytp-ad-skip-button",
     ".ytp-ad-skip-button-modern",
     ".ytp-skip-ad-button",
-    ".ytp-ad-overlay-close-button"
+    ".ytp-ad-skip-button",
+    ".ytp-ad-overlay-close-button",
+    ".ytp-ad-skip-button-slot button"
   ];
 
-  // ─── State ───────────────────────────────────────────────────────────────────
-
   let enabled = true;
-  const STYLE_ID = "yt-ad-blocker-style";
+  let savedMuted = false;
+  let savedRate = 1;
+  let savedVideo = null;
+  let observer = null;
+  let skipAttempts = 0;
 
-  // ─── CSS Hide ────────────────────────────────────────────────────────────────
-
+  // ── CSS-скрытие рекламных блоков ──────────────────────────────────────────
   function updateStyle() {
     const existing = document.getElementById(STYLE_ID);
     if (!enabled) {
@@ -51,106 +51,121 @@
     if (existing || !document.documentElement) return;
     const style = document.createElement("style");
     style.id = STYLE_ID;
-    style.textContent = `${AD_SELECTORS.join(",\n")} { display: none !important; visibility: hidden !important; }`;
+    style.textContent = `${AD_SELECTORS.join(",\n")} { display: none !important; }`;
     document.documentElement.appendChild(style);
   }
 
-  // ─── DOM Removal ─────────────────────────────────────────────────────────────
-
-  function removeAdElements() {
-    if (!enabled) return;
-    for (const selector of AD_SELECTORS) {
-      try {
-        document.querySelectorAll(selector).forEach(el => el.remove());
-      } catch (_) { /* ignore invalid selectors in older Chrome */ }
-    }
+  // ── Восстановить нормальное воспроизведение после рекламы ─────────────────
+  function restoreVideo() {
+    if (!savedVideo) return;
+    savedVideo.muted = savedMuted;
+    savedVideo.playbackRate = savedRate;
+    savedVideo = null;
+    skipAttempts = 0;
   }
 
-  // ─── Player Ad Skip / Block ───────────────────────────────────────────────────
-
-  function handlePlayerAd() {
-    if (!enabled) return;
-
-    const player = document.querySelector(".html5-video-player.ad-showing");
-    if (!player) return;
-
-    // 1. Click any visible skip button immediately
+  // ── Нажать кнопку «Пропустить» если она доступна ─────────────────────────
+  function tryClickSkip(player) {
     for (const sel of SKIP_SELECTORS) {
       const btn = player.querySelector(sel);
-      if (btn && !btn.disabled && btn.offsetParent !== null) {
+      if (btn && !btn.disabled && btn.getClientRects().length > 0) {
         btn.click();
-        return; // skip button clicked – done for this tick
+        return true;
       }
     }
+    return false;
+  }
 
-    // 2. No skip button yet – try to end the ad by seeking to its end
+  // ── Основная логика обработки рекламы в плеере ───────────────────────────
+  function handlePlayerAd() {
+    if (!enabled) {
+      restoreVideo();
+      return;
+    }
+
+    const player = document.querySelector(".html5-video-player.ad-showing");
+    if (!player) {
+      restoreVideo();
+      return;
+    }
+
+    // 1) Попробовать нажать «Пропустить»
+    tryClickSkip(player);
+
     const video = player.querySelector("video");
-    if (video && isFinite(video.duration) && video.duration > 0) {
-      // Seek to just before the end so YouTube marks the ad as "watched"
-      // and transitions to the real video.
-      video.currentTime = video.duration - 0.01;
+    if (!video) return;
+
+    // Сохранить исходное состояние видео
+    if (savedVideo !== video) {
+      restoreVideo();
+      savedVideo = video;
+      savedMuted = video.muted;
+      savedRate = video.playbackRate;
+      skipAttempts = 0;
+    }
+
+    // 2) Мгновенный прыжок к концу рекламного видео
+    if (isFinite(video.duration) && video.duration > 0) {
+      video.currentTime = video.duration;
+    }
+
+    // 3) Заглушить на время рекламы
+    video.muted = true;
+
+    // 4) Запасной вариант: ускорение — только если прыжок не работает несколько тиков
+    skipAttempts++;
+    if (skipAttempts > 4 && video.playbackRate < 16) {
+      video.playbackRate = 16;
     }
   }
-
-  // ─── MutationObserver ────────────────────────────────────────────────────────
-
-  let observer = null;
-
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(() => {
-      removeAdElements();
-      handlePlayerAd();
-    });
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true
-    });
-  }
-
-  function stopObserver() {
-    if (!observer) return;
-    observer.disconnect();
-    observer = null;
-  }
-
-  // ─── Interval fallback ────────────────────────────────────────────────────────
 
   function tick() {
     updateStyle();
-    removeAdElements();
     handlePlayerAd();
   }
 
-  // ─── Init & Storage Sync ─────────────────────────────────────────────────────
-
-  function applyEnabled(val) {
-    enabled = val;
-    if (enabled) {
-      updateStyle();
-      removeAdElements();
-      startObserver();
-    } else {
-      document.getElementById(STYLE_ID)?.remove();
-      stopObserver();
-    }
+  // ── MutationObserver: мгновенная реакция при появлении рекламы ───────────
+  function setupObserver() {
+    if (observer || !document.body) return;
+    observer = new MutationObserver(tick);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributeFilter: ["class"]
+    });
   }
 
-  chrome.storage.local.get("enabled", ({ enabled: storedEnabled }) => {
-    applyEnabled(storedEnabled !== false);
+  function teardownObserver() {
+    observer?.disconnect();
+    observer = null;
+  }
+
+  function init() {
+    updateStyle();
+    setupObserver();
+    tick();
+  }
+
+  // ── Загрузить сохранённое состояние ──────────────────────────────────────
+  chrome.storage.local.get("enabled", ({ enabled: stored }) => {
+    enabled = stored !== false;
+    if (document.body) init();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !("enabled" in changes)) return;
-    applyEnabled(changes.enabled.newValue !== false);
+    enabled = changes.enabled.newValue !== false;
+    if (!enabled) {
+      teardownObserver();
+      restoreVideo();
+    } else {
+      init();
+    }
+    updateStyle();
   });
 
-  // Run immediately and on DOMContentLoaded
-  tick();
-  document.addEventListener("DOMContentLoaded", tick, { once: true });
+  document.addEventListener("DOMContentLoaded", init, { once: true });
 
-  // Fallback interval for edge cases (e.g. dynamically injected ads)
-  window.setInterval(tick, 800);
-
-  startObserver();
+  // Fallback-интервал на случай динамического обновления страницы
+  window.setInterval(tick, 300);
 })();
