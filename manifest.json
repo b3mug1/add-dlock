@@ -8,7 +8,9 @@
     "*://*.youtube.com/*",
     "*://*.doubleclick.net/*",
     "*://*.googlesyndication.com/*",
-    "*://*.googleadservices.com/*"
+    "*://*.googleadservices.com/*",
+    "*://*.adservice.google.com/*",
+    "*://*.adservice.google.ru/*"
   ],
   "background": {
     "service_worker": "background.js"
