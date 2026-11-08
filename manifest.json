@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "YouTube Ad Blocker",
   "version": "1.0.0",
-  "description": "Hides YouTube ad placements and skips player ads when possible.",
-  "permissions": ["storage", "declarativeNetRequest"],
+  "description": "Blocks YouTube ads: hides ad elements, skips player ads, and blocks ad network requests.",
+  "permissions": ["storage", "declarativeNetRequest", "declarativeNetRequestFeedback"],
   "host_permissions": [
     "*://*.youtube.com/*",
     "*://*.doubleclick.net/*",
