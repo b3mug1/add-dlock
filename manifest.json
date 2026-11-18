@@ -3,7 +3,13 @@
   "name": "YouTube Ad Blocker",
   "version": "1.0.0",
   "description": "Blocks YouTube ads: hides ad elements, skips player ads, and blocks ad network requests.",
-  "permissions": ["storage", "declarativeNetRequest", "declarativeNetRequestFeedback"],
+  "permissions": ["storage", "declarativeNetRequest"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "host_permissions": [
     "*://*.youtube.com/*",
     "*://*.doubleclick.net/*",
@@ -17,9 +23,19 @@
   },
   "action": {
     "default_title": "YouTube Ad Blocker",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
   "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["*://*.youtube.com/*"],
       "js": ["content.js"],

@@ -35,6 +35,12 @@
   ];
 
   let enabled = true;
+  let globallyEnabled = true;
+  let contextKey = "";
+  let lastContextCheck = 0;
+  let lastScan = 0;
+  let adShowing = false;
+  const seenAds = new WeakSet();
   let savedMuted = false;
   let savedRate = 1;
   let savedVideo = null;
@@ -80,13 +86,20 @@
   function handlePlayerAd() {
     if (!enabled) {
       restoreVideo();
+      adShowing = false;
       return;
     }
 
     const player = document.querySelector(".html5-video-player.ad-showing");
     if (!player) {
       restoreVideo();
+      adShowing = false;
       return;
+    }
+
+    if (!adShowing) {
+      adShowing = true;
+      void chrome.runtime.sendMessage({ type: "REPORT_STATS", skipped: 1 }).catch(() => {});
     }
 
     // 1) Попробовать нажать «Пропустить»
@@ -120,8 +133,54 @@
   }
 
   function tick() {
+    refreshContext();
+    if (!enabled) return;
     updateStyle();
     handlePlayerAd();
+    if (Date.now() - lastScan >= 1000) {
+      lastScan = Date.now();
+      let hidden = 0;
+      for (const element of document.querySelectorAll(AD_SELECTORS.join(","))) {
+        if (seenAds.has(element)) continue;
+        seenAds.add(element);
+        hidden++;
+      }
+      if (hidden) {
+        void chrome.runtime.sendMessage({ type: "REPORT_STATS", hidden }).catch(() => {});
+      }
+    }
+  }
+
+  function getContext() {
+    const url = new URL(window.location.href);
+    const videoId = url.pathname === "/watch"
+      ? url.searchParams.get("v")
+      : url.pathname.startsWith("/shorts/") ? url.pathname.split("/")[2] : null;
+    const channelLink = document.querySelector(
+      "ytd-watch-metadata ytd-channel-name a[href], ytd-reel-player-header-renderer a[href]"
+    );
+    const channelPath = channelLink?.getAttribute("href") || url.pathname;
+    const channelId = channelPath.match(/^\/(UC[\w-]{22}|@[\w.-]{3,30}|channel\/UC[\w-]{22})/);
+    return {
+      videoId: videoId && /^[\w-]{11}$/.test(videoId) ? videoId : null,
+      channelId: channelId ? channelId[1].replace(/^channel\//, "") : null
+    };
+  }
+
+  function refreshContext(force = false) {
+    if (!force && Date.now() - lastContextCheck < 500) return Promise.resolve();
+    lastContextCheck = Date.now();
+    const context = getContext();
+    const nextKey = `${window.location.pathname}|${context.videoId}|${context.channelId}`;
+    if (!force && nextKey === contextKey) return Promise.resolve();
+    contextKey = nextKey;
+    return chrome.runtime.sendMessage({ type: "SYNC_TAB_CONTEXT", context })
+      .then((state) => {
+        if (nextKey === contextKey && state && typeof state.active === "boolean") {
+          setActive(state.active);
+        }
+      })
+      .catch(() => {});
   }
 
   // ── MutationObserver: мгновенная реакция при появлении рекламы ───────────
@@ -144,30 +203,63 @@
 
   function init() {
     updateStyle();
-    setupObserver();
+    if (enabled) setupObserver();
     tick();
+  }
+
+  function setActive(active) {
+    if (enabled === active) return;
+    enabled = active;
+    syncInjectedState();
+    if (enabled) init();
+    else {
+      teardownObserver();
+      restoreVideo();
+      adShowing = false;
+      updateStyle();
+    }
+  }
+
+  function syncInjectedState() {
+    window.postMessage({ source: "yt-ad-blocker", enabled }, window.location.origin);
   }
 
   // ── Загрузить сохранённое состояние ──────────────────────────────────────
   chrome.storage.local.get("enabled", ({ enabled: stored }) => {
-    enabled = stored !== false;
+    globallyEnabled = stored !== false;
+    enabled = globallyEnabled;
+    syncInjectedState();
     init();
+    refreshContext(true);
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !("enabled" in changes)) return;
-    enabled = changes.enabled.newValue !== false;
-    if (!enabled) {
-      teardownObserver();
-      restoreVideo();
-    } else {
-      init();
+    if (area !== "local") return;
+    if ("enabled" in changes) {
+      globallyEnabled = changes.enabled.newValue !== false;
+      setActive(globallyEnabled);
     }
-    updateStyle();
+    if ("enabled" in changes || "excludedVideos" in changes || "excludedChannels" in changes) {
+      refreshContext(true);
+    }
   });
 
-  document.addEventListener("DOMContentLoaded", init, { once: true });
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "REFRESH_STATE") return false;
+    refreshContext(true).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (enabled) init();
+    refreshContext(true);
+  }, { once: true });
+
+  document.addEventListener("yt-navigate-finish", () => refreshContext(true));
+  window.addEventListener("popstate", () => refreshContext(true));
 
   // Fallback-интервал на случай динамического обновления страницы
-  window.setInterval(tick, 300);
+  window.setInterval(() => {
+    tick();
+  }, 1500);
 })();

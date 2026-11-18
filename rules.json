@@ -50,14 +50,5 @@
       "urlFilter": "||youtube.com/ptracking*",
       "resourceTypes": ["xmlhttprequest", "ping", "image"]
     }
-  },
-  {
-    "id": 5,
-    "priority": 2,
-    "action": { "type": "block" },
-    "condition": {
-      "urlFilter": "||youtube.com/youtubei/v1/log_event*",
-      "resourceTypes": ["xmlhttprequest", "ping"]
-    }
   }
 ]

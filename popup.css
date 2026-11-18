@@ -1,9 +1,24 @@
 * { box-sizing: border-box; }
-body { width: 280px; margin: 0; color: #202124; font: 14px/1.4 system-ui, sans-serif; background: #fff; }
+body { width: 320px; margin: 0; color: #202124; font: 14px/1.4 system-ui, sans-serif; background: #fff; }
 main { padding: 18px; }
+.brand { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+.brand img { flex: none; }
 h1 { margin: 0 0 4px; font-size: 18px; }
-.subtitle { margin: 0 0 20px; color: #60646b; }
+.subtitle { margin: 0; color: #60646b; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid #dadce0; border-radius: 10px; cursor: pointer; }
+#page-controls { margin-top: 10px; }
+.buttons { display: flex; gap: 8px; margin-top: 10px; }
+button { flex: 1; border: 1px solid #dadce0; border-radius: 8px; background: #fff; padding: 8px; font: inherit; cursor: pointer; }
+button:hover:not(:disabled) { background: #f4f6fa; }
+button:disabled { opacity: .5; cursor: default; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.stats div { border-radius: 8px; background: #f4f6fa; padding: 10px; }
+.stats strong, .stats span { display: block; }
+.stats strong { font-size: 20px; }
+.stats span { color: #60646b; font-size: 12px; }
+details { margin-top: 14px; }
+summary { cursor: pointer; }
+#diagnostics { white-space: pre-line; overflow-wrap: anywhere; color: #60646b; font-size: 12px; }
 input { width: 20px; height: 20px; margin: 0; accent-color: #c5221f; cursor: pointer; }
 input:disabled { cursor: wait; }
 #status { min-height: 20px; margin: 12px 0 0; color: #60646b; }
