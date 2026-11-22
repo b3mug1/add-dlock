@@ -118,6 +118,62 @@ test("player ad is skipped by jumping currentTime to duration", () => {
   assert.equal(playCalls, 0, "a user-paused video should stay paused without an enforcement dialog");
 });
 
+test("DOM mutation bursts schedule at most one content scan per 100ms", () => {
+  let mutationCallback;
+  let timerId = 0;
+  const timers = new Map();
+  const document = {
+    documentElement: { appendChild() {} },
+    body: { nodeType: 1 },
+    createElement: () => ({ id: "", textContent: "" }),
+    getElementById: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    addEventListener() {}
+  };
+  const chrome = {
+    runtime: {
+      sendMessage: async () => ({ active: true }),
+      onMessage: { addListener() {} }
+    },
+    storage: {
+      local: { get: (_key, callback) => callback({ enabled: true }) },
+      onChanged: { addListener() {} }
+    }
+  };
+  loadScript("content.js", {
+    chrome,
+    document,
+    URL,
+    window: {
+      setTimeout(callback) {
+        const id = ++timerId;
+        timers.set(id, callback);
+        return id;
+      },
+      clearTimeout(id) { timers.delete(id); },
+      setInterval() { return 1; },
+      postMessage() {},
+      addEventListener() {},
+      location: { origin: "https://www.youtube.com", href: "https://www.youtube.com/", pathname: "/" }
+    },
+    MutationObserver: class {
+      constructor(callback) { mutationCallback = callback; }
+      observe() {}
+      disconnect() {}
+    }
+  });
+
+  for (let i = 0; i < 100; i++) mutationCallback();
+  assert.equal(timers.size, 1, "a mutation burst should queue only one scan");
+
+  const [runScheduledTick] = timers.values();
+  timers.clear();
+  runScheduledTick();
+  for (let i = 0; i < 100; i++) mutationCallback();
+  assert.equal(timers.size, 1, "a later burst should schedule one new scan");
+});
+
 test("video state is restored when extension is disabled mid-ad", () => {
   let storageListener;
   const postedStates = [];

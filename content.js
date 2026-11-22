@@ -56,6 +56,7 @@
   let savedRate = 1;
   let savedVideo = null;
   let observer = null;
+  let observerTickTimer = null;
   let skipAttempts = 0;
 
   // ── CSS-скрытие рекламных блоков ──────────────────────────────────────────
@@ -235,11 +236,19 @@
   }
 
   // ── MutationObserver: мгновенная реакция при появлении рекламы ───────────
+  function scheduleObserverTick() {
+    if (!enabled || observerTickTimer !== null) return;
+    observerTickTimer = window.setTimeout(() => {
+      observerTickTimer = null;
+      if (enabled) tick();
+    }, 100);
+  }
+
   function setupObserver() {
     if (observer) return;
     const target = document.body || document.documentElement;
     if (!target) return;
-    observer = new MutationObserver(tick);
+    observer = new MutationObserver(scheduleObserverTick);
     observer.observe(target, {
       childList: true,
       subtree: true,
@@ -250,6 +259,10 @@
   function teardownObserver() {
     observer?.disconnect();
     observer = null;
+    if (observerTickTimer !== null) {
+      window.clearTimeout(observerTickTimer);
+      observerTickTimer = null;
+    }
   }
 
   function init() {
