@@ -26,6 +26,21 @@
     "ytd-watch-next-secondary-results-renderer ytd-compact-promoted-video-renderer"
   ];
 
+  // ── Селекторы диалога "Блокировщик рекламы обнаружен" ─────────────────────
+  const ENFORCEMENT_SELECTORS = [
+    // Основной диалог-оверлей (enforcement message)
+    "yt-mealmaker-dialog-host",
+    "ytd-enforcement-message-view-model",
+    // Бэкдроп который блокирует страницу
+    "tp-yt-iron-overlay-backdrop",
+    // Контейнер диалога
+    "yt-playability-error-supported-renderers",
+    // Попап с предупреждением
+    ".yt-mealmaker-dialog-host",
+    // Оверлей который перекрывает плеер
+    ".ytd-enforcement-message-view-model"
+  ];
+
   const SKIP_SELECTORS = [
     ".ytp-ad-skip-button-modern",
     ".ytp-skip-ad-button",
@@ -57,8 +72,47 @@
     if (existing || !document.documentElement) return;
     const style = document.createElement("style");
     style.id = STYLE_ID;
-    style.textContent = `${AD_SELECTORS.join(",\n")} { display: none !important; }`;
+    // Скрываем рекламу И enforcement-диалог через CSS
+    const allSelectors = [...AD_SELECTORS, ...ENFORCEMENT_SELECTORS];
+    style.textContent = `
+      ${allSelectors.join(",\n")} { display: none !important; }
+
+      /* Разблокировать скролл страницы если диалог его заблокировал */
+      body.yt-ad-blocker-active { overflow: auto !important; }
+
+      /* Убрать затемнение-оверлей */
+      tp-yt-iron-overlay-backdrop { display: none !important; opacity: 0 !important; }
+    `;
     document.documentElement.appendChild(style);
+  }
+
+  // ── Удалить enforcement-диалог "Блокировщик рекламы обнаружен" ───────────
+  function removeEnforcementDialog() {
+    if (!enabled) return;
+
+    // Удалить все элементы диалога из DOM
+    for (const selector of ENFORCEMENT_SELECTORS) {
+      try {
+        document.querySelectorAll(selector).forEach(el => el.remove());
+      } catch (_) {}
+    }
+
+    // Убрать блокировку скролла которую YouTube вешает при диалоге
+    document.documentElement.style.removeProperty("overflow");
+    document.body && (document.body.style.removeProperty("overflow"));
+
+    // Восстановить плеер — убрать класс "unplayable" если YouTube его поставил
+    const player = document.querySelector(".html5-video-player");
+    if (player) {
+      player.classList.remove("unplayable-reason");
+      player.classList.remove("ytp-error");
+    }
+
+    // Если видео на паузе из-за диалога — возобновить воспроизведение
+    const video = document.querySelector(".html5-video-player video");
+    if (video && video.paused && !video.ended) {
+      video.play().catch(() => {});
+    }
   }
 
   // ── Восстановить нормальное воспроизведение после рекламы ─────────────────
@@ -136,6 +190,7 @@
     refreshContext();
     if (!enabled) return;
     updateStyle();
+    removeEnforcementDialog();
     handlePlayerAd();
     if (Date.now() - lastScan >= 1000) {
       lastScan = Date.now();
