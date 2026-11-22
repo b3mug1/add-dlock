@@ -31,8 +31,6 @@
     // Основной диалог-оверлей (enforcement message)
     "yt-mealmaker-dialog-host",
     "ytd-enforcement-message-view-model",
-    // Контейнер диалога
-    "yt-playability-error-supported-renderers",
     // Попап с предупреждением
     ".yt-mealmaker-dialog-host",
     // Оверлей который перекрывает плеер

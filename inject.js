@@ -5,22 +5,10 @@
 
 (() => {
   const PLAYER_URL   = /\/youtubei\/v1\/player(\?|$)/;
-  const ENFORCE_URL  = /\/youtubei\/v1\/next(\?|$)/;        // содержит enforcement в ответе
   const ISOLATED_SOURCE = "yt-ad-blocker";
 
   // Поля рекламы которые нужно вырезать из player-ответа
-  const AD_FIELDS = [
-    "adPlacements",
-    "adSlots",
-    "playerAds",
-    "auxiliaryUi",           // содержит enforcement message UI
-  ];
-
-  // Поля enforcement-диалога в /next ответе
-  const ENFORCEMENT_FIELDS = [
-    "enforcementMessage",
-    "enforcementMealmaker",
-  ];
+  const AD_FIELDS = ["adPlacements", "adSlots", "playerAds"];
 
   let enabled = true;
 
@@ -38,17 +26,6 @@
       try { delete obj[f]; } catch (_) {}
     }
     return obj;
-  }
-
-  function deepStripEnforcement(obj) {
-    if (!obj || typeof obj !== "object") return;
-    for (const key of Object.keys(obj)) {
-      if (ENFORCEMENT_FIELDS.includes(key)) {
-        try { delete obj[key]; } catch (_) {}
-      } else {
-        deepStripEnforcement(obj[key]);
-      }
-    }
   }
 
   // ── window.ytInitialPlayerResponse ─────────────────────────────────────────
@@ -79,11 +56,6 @@
       // Вырезаем рекламные поля из /player ответа
       if (PLAYER_URL.test(url)) {
         return promise.then(resp => resp?.ok ? rewriteJson(resp, data => stripFields(data, AD_FIELDS)) : resp);
-      }
-
-      // Вырезаем enforcement из /next ответа
-      if (ENFORCE_URL.test(url)) {
-        return promise.then(resp => resp?.ok ? rewriteJson(resp, data => { deepStripEnforcement(data); return data; }) : resp);
       }
 
       return promise;
@@ -125,18 +97,13 @@
       const xhr = this;
       const url = urlMap.get(xhr) ?? "";
 
-      if (enabled && (PLAYER_URL.test(url) || ENFORCE_URL.test(url))) {
+      if (enabled && PLAYER_URL.test(url)) {
         xhr.addEventListener("readystatechange", () => {
           if (xhr.readyState !== 4) return;
           try {
-            const isPlayer  = PLAYER_URL.test(url);
-            const isEnforce = ENFORCE_URL.test(url);
-            if (!isPlayer && !isEnforce) return;
-
             const raw = xhr.responseText;
             const data = JSON.parse(raw);
-            if (isPlayer)  stripFields(data, AD_FIELDS);
-            if (isEnforce) deepStripEnforcement(data);
+            stripFields(data, AD_FIELDS);
             const body = JSON.stringify(data);
             Object.defineProperty(xhr, "responseText", { configurable: true, value: body });
             Object.defineProperty(xhr, "response",     { configurable: true, value: body });

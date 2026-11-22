@@ -187,9 +187,11 @@ test("main-world script strips ad fields and follows the popup state", async () 
       }
       return new Response(JSON.stringify({
         playabilityStatus: { status: "OK" },
+        streamingData: { formats: [{ url: "https://video.example/stream" }] },
         adPlacements: [{}],
         adSlots: [{}],
-        playerAds: [{}]
+        playerAds: [{}],
+        auxiliaryUi: { message: "preserved player UI data" }
       }), { headers: { "content-type": "application/json" } });
     }
   };
@@ -203,6 +205,8 @@ test("main-world script strips ad fields and follows the popup state", async () 
   const filteredBody = await filtered.json();
   assert.equal(filteredBody.adSlots, undefined);
   assert.equal(filteredBody.playerAds, undefined);
+  assert.equal(filteredBody.streamingData.formats[0].url, "https://video.example/stream");
+  assert.equal(filteredBody.auxiliaryUi.message, "preserved player UI data");
   assert.equal(filteredBody.playabilityStatus.status, "OK");
 
   messageListener({ source: window, data: { source: "yt-ad-blocker", enabled: false } });
