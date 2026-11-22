@@ -31,8 +31,6 @@
     // Основной диалог-оверлей (enforcement message)
     "yt-mealmaker-dialog-host",
     "ytd-enforcement-message-view-model",
-    // Бэкдроп который блокирует страницу
-    "tp-yt-iron-overlay-backdrop",
     // Контейнер диалога
     "yt-playability-error-supported-renderers",
     // Попап с предупреждением
@@ -80,8 +78,6 @@
       /* Разблокировать скролл страницы если диалог его заблокировал */
       body.yt-ad-blocker-active { overflow: auto !important; }
 
-      /* Убрать затемнение-оверлей */
-      tp-yt-iron-overlay-backdrop { display: none !important; opacity: 0 !important; }
     `;
     document.documentElement.appendChild(style);
   }
@@ -89,6 +85,7 @@
   // ── Удалить enforcement-диалог "Блокировщик рекламы обнаружен" ───────────
   function removeEnforcementDialog() {
     if (!enabled) return;
+    if (!ENFORCEMENT_SELECTORS.some(selector => document.querySelector(selector))) return;
 
     // Удалить все элементы диалога из DOM
     for (const selector of ENFORCEMENT_SELECTORS) {
@@ -96,10 +93,11 @@
         document.querySelectorAll(selector).forEach(el => el.remove());
       } catch (_) {}
     }
+    document.querySelectorAll("tp-yt-iron-overlay-backdrop").forEach(el => el.remove());
 
     // Убрать блокировку скролла которую YouTube вешает при диалоге
-    document.documentElement.style.removeProperty("overflow");
-    document.body && (document.body.style.removeProperty("overflow"));
+    document.documentElement?.style?.removeProperty("overflow");
+    document.body?.style?.removeProperty("overflow");
 
     // Восстановить плеер — убрать класс "unplayable" если YouTube его поставил
     const player = document.querySelector(".html5-video-player");

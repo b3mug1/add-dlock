@@ -47,7 +47,11 @@ test("player ad is skipped by jumping currentTime to duration", () => {
   let storageListener;
   let clicks = 0;
 
-  const video = { muted: false, playbackRate: 1, currentTime: 0, duration: 15 };
+  let playCalls = 0;
+  const video = {
+    muted: false, playbackRate: 1, currentTime: 0, duration: 15, paused: false,
+    play() { playCalls++; return Promise.resolve(); }
+  };
   const button = { disabled: false, getClientRects: () => [1], click: () => { clicks++; } };
 
   const player = {
@@ -65,7 +69,11 @@ test("player ad is skipped by jumping currentTime to duration", () => {
     body: fakeBody,
     createElement: () => ({ id: "", textContent: "" }),
     getElementById: () => null,
-    querySelector: (sel) => sel.includes("ad-showing") && adShowing ? player : null,
+    querySelector: (sel) => {
+      if (sel.includes("ad-showing") && adShowing) return player;
+      if (sel === ".html5-video-player video") return video;
+      return null;
+    },
     querySelectorAll: () => [],
     addEventListener() {}
   };
@@ -104,6 +112,10 @@ test("player ad is skipped by jumping currentTime to duration", () => {
   interval();
   assert.equal(video.muted, false, "muted should be restored after ad");
   assert.equal(video.playbackRate, 1, "playbackRate should be restored after ad");
+
+  video.paused = true;
+  interval();
+  assert.equal(playCalls, 0, "a user-paused video should stay paused without an enforcement dialog");
 });
 
 test("video state is restored when extension is disabled mid-ad", () => {
@@ -161,16 +173,25 @@ test("video state is restored when extension is disabled mid-ad", () => {
 
 test("main-world script strips ad fields and follows the popup state", async () => {
   let messageListener;
+  let attestationRequests = 0;
   const window = {
     addEventListener(type, listener) {
       if (type === "message") messageListener = listener;
     },
-    fetch: async () => new Response(JSON.stringify({
-      playabilityStatus: { status: "OK" },
-      adPlacements: [{}],
-      adSlots: [{}],
-      playerAds: [{}]
-    }), { headers: { "content-type": "application/json" } })
+    fetch: async (input) => {
+      if (String(input).includes("/youtubei/v1/att")) {
+        attestationRequests++;
+        return new Response('{"attestation":"ok"}', {
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({
+        playabilityStatus: { status: "OK" },
+        adPlacements: [{}],
+        adSlots: [{}],
+        playerAds: [{}]
+      }), { headers: { "content-type": "application/json" } });
+    }
   };
 
   loadScript("inject.js", { window, Response, Headers, URL });
@@ -190,6 +211,10 @@ test("main-world script strips ad fields and follows the popup state", async () 
 
   const unfiltered = await window.fetch("https://www.youtube.com/youtubei/v1/player");
   assert.equal((await unfiltered.json()).adSlots.length, 1);
+
+  const attestation = await window.fetch("https://www.youtube.com/youtubei/v1/att");
+  assert.deepEqual(await attestation.json(), { attestation: "ok" });
+  assert.equal(attestationRequests, 1, "attestation request should reach YouTube");
 });
 
 test("manifest loads the player hook before the isolated content script", () => {
@@ -199,6 +224,12 @@ test("manifest loads the player hook before the isolated content script", () => 
   assert.equal(injected.world, "MAIN");
   assert.equal(injected.run_at, "document_start");
   assert.deepEqual(isolated.js, ["content.js"]);
+  const rules = JSON.parse(fs.readFileSync(path.join(root, "rules.json"), "utf8"));
+  assert.equal(
+    rules.some((rule) => rule.condition.urlFilter?.includes("/youtubei/v1/att")),
+    false,
+    "attestation requests should not be blocked"
+  );
 });
 
 test("global switch restores the previous ruleset when storage fails", async () => {

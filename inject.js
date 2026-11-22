@@ -5,7 +5,6 @@
 
 (() => {
   const PLAYER_URL   = /\/youtubei\/v1\/player(\?|$)/;
-  const ATT_URL      = /\/youtubei\/v1\/att(\?|$)/;         // anti-adblock attestation
   const ENFORCE_URL  = /\/youtubei\/v1\/next(\?|$)/;        // содержит enforcement в ответе
   const ISOLATED_SOURCE = "yt-ad-blocker";
 
@@ -74,15 +73,6 @@
 
     window.fetch = function(input, init) {
       const url = urlFromInput(input);
-
-      // Блокируем anti-adblock attestation запрос — возвращаем пустой 200
-      if (enabled && ATT_URL.test(url)) {
-        return Promise.resolve(new Response("{}", {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        }));
-      }
-
       const promise = orig.apply(this, arguments);
       if (!enabled) return promise;
 
@@ -134,20 +124,6 @@
     XMLHttpRequest.prototype.send = function(...args) {
       const xhr = this;
       const url = urlMap.get(xhr) ?? "";
-
-      // Блокируем att запрос — подменяем ответ
-      if (enabled && ATT_URL.test(url)) {
-        // Не отправляем реальный запрос, симулируем пустой ответ
-        setTimeout(() => {
-          Object.defineProperty(xhr, "readyState",   { configurable: true, get: () => 4 });
-          Object.defineProperty(xhr, "status",       { configurable: true, get: () => 200 });
-          Object.defineProperty(xhr, "responseText", { configurable: true, get: () => "{}" });
-          Object.defineProperty(xhr, "response",     { configurable: true, get: () => "{}" });
-          xhr.dispatchEvent(new Event("readystatechange"));
-          xhr.dispatchEvent(new Event("load"));
-        }, 0);
-        return;
-      }
 
       if (enabled && (PLAYER_URL.test(url) || ENFORCE_URL.test(url))) {
         xhr.addEventListener("readystatechange", () => {
