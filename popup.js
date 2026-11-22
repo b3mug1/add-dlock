@@ -16,6 +16,16 @@ let tabId = null;
 let busy = false;
 let state = null;
 
+function sendMessageWithTimeout(message, timeoutMs = 3000) {
+  let timeoutId;
+  return Promise.race([
+    chrome.runtime.sendMessage(message),
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Превышено время ожидания ответа расширения")), timeoutMs);
+    })
+  ]).finally(() => clearTimeout(timeoutId));
+}
+
 function showStatus(message, isError = false) {
   elements.status.textContent = message;
   elements.status.classList.toggle("error", isError);
@@ -53,8 +63,9 @@ function render() {
 }
 
 async function refresh() {
-  const response = await chrome.runtime.sendMessage({ type: "GET_STATE", tabId });
+  const response = await sendMessageWithTimeout({ type: "GET_STATE", tabId });
   if (response?.error) throw new Error(response.error);
+  if (!response) throw new Error("Фоновый обработчик расширения не вернул состояние");
   state = response;
   render();
 }
@@ -63,17 +74,20 @@ async function perform(message) {
   busy = true;
   render();
   showStatus("Сохранение…");
-  let failed = false;
+  let failureMessage = null;
   try {
     const response = await chrome.runtime.sendMessage({ ...message, tabId });
     if (response?.error) throw new Error(response.error);
     await refresh();
-  } catch (_error) {
-    failed = true;
+  } catch (error) {
+    failureMessage = error.message;
   } finally {
     busy = false;
     render();
-    if (failed) showStatus("Не удалось изменить настройку", true);
+    if (failureMessage) {
+      showStatus(`Не удалось изменить настройку: ${failureMessage}`, true);
+      elements.diagnostics.textContent = `Ошибка: ${failureMessage}`;
+    }
   }
 }
 
@@ -95,10 +109,12 @@ void (async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab?.url && /^https:\/\/(?:[\w-]+\.)*youtube\.com\//.test(tab.url)) {
       tabId = tab.id;
-      await chrome.tabs.sendMessage(tabId, { type: "REFRESH_STATE" }).catch(() => {});
+      void chrome.tabs.sendMessage(tabId, { type: "REFRESH_STATE" }).catch(() => {});
     }
     await refresh();
-  } catch (_error) {
-    showStatus("Не удалось загрузить состояние", true);
+  } catch (error) {
+    elements.enabled.disabled = true;
+    elements.diagnostics.textContent = `Ошибка: ${error.message}`;
+    showStatus(`Не удалось загрузить состояние: ${error.message}`, true);
   }
 })();
